@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    {% load static %}
+    <meta charset="utf-8">
+    <title>Najbliži dućan</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""/>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+
+    <link rel="stylesheet" type="text/css"
+    href="{% static '/routing/leaflet-routing-machine.css' %}"/>
+
+    <script type="text/javascript" src="{% static '/routing/leaflet-routing-machine.min.js' %}"></script>
+
+    <style>
+      #mapid {height: 500px;}
+    </style>
+  </head>
+  <body>
+    <div id="shopList">
+      <h1>Najbliže trgovine</h1>
+      <table id="shopsTable" border="1">
+        <thead>
+          <tr>
+            <th>Ime</th>
+            <th>Adresa</th>
+            <th>Grad</th>
+            <th>Radno Vrijeme</th>
+            <th>Web stranica</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div id="mapid"></div>
+  </body>
+    <script>
+      var map = L.map('mapid').setView([45.816782, 16.003975], 17);
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+
+      var userLocationMarker = L.marker([45.816782, 16.003975], {
+          draggable: false
+      }).addTo(map).bindPopup('Vi ste ovdje!').openPopup();
+
+      var shopIcon = L.icon({
+          iconUrl: "{% static '/images/gps.png' %}",
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34]
+      });
+
+      var shopMarkers = [];
+      var routingControl = L.Routing.control({}).addTo(map);
+
+      function createRoute(start, end) {
+          routingControl.setWaypoints([start, end]);
+      }
+
+      function onShopMarkerClick(shopLat, shopLng) {
+          var start = userLocationMarker.getLatLng();
+          var end = L.latLng(shopLat, shopLng);
+          createRoute(start, end);
+      }
+
+      function updateShopsTable(shops) {
+          var tableBody = document.getElementById('shopsTable').getElementsByTagName('tbody')[0];
+          tableBody.innerHTML = '';
+          shops.forEach(shop => {
+              var row = tableBody.insertRow();
+              var cellName = row.insertCell(0);
+              var cellAddress = row.insertCell(1);
+              var cellCity = row.insertCell(2);
+              var cellHours = row.insertCell(3);
+              var cellWeb = row.insertCell(4);
+              cellName.innerHTML = shop.name;
+              cellAddress.innerHTML = shop.adresa;
+              cellCity.innerHTML = shop.grad;
+              cellHours.innerHTML = shop.radno_vrijeme;
+              cellWeb.innerHTML = '<a href="' + shop.web + '" target="_blank">Web stranica</a>';
+          });
+      }
+
+      function onMapClick(e) {
+          userLocationMarker.setLatLng(e.latlng).update();
+          fetch('/get-nearest-shops/', {
+              method: 'POST',
+              headers: {
+                  'Content-Type': 'application/json',
+                  'X-CSRFToken': '{{ csrf_token }}'
+              },
+              body: JSON.stringify({
+                  latitude: e.latlng.lat,
+                  longitude: e.latlng.lng
+              })
+          })
+          .then(response => response.json())
+          .then(data => {
+              shopMarkers.forEach(marker => map.removeLayer(marker));
+              shopMarkers = [];
+              data.shops.forEach(shop => {
+                  var marker = L.marker([shop.lat, shop.lng], {
+                      icon: shopIcon
+                  }).addTo(map).bindPopup(shop.name).on('click', () => {
+                      onShopMarkerClick(shop.lat, shop.lng);
+                  });
+                  shopMarkers.push(marker);
+              });
+              updateShopsTable(data.shops);
+          });
+      }
+
+      map.on('click', onMapClick);
+    </script>
+</html>
